@@ -21,7 +21,7 @@ function getPos(e: CanvasEvent, canvas: HTMLCanvasElement) {
   return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 
-function clearedRatio(ctx: CanvasRenderingContext2D) {
+function calcClearedRatio(ctx: CanvasRenderingContext2D) {
   const { width, height } = ctx.canvas;
   const data = ctx.getImageData(0, 0, width, height).data;
   let cleared = 0;
@@ -35,8 +35,9 @@ export const ScratchCard: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [prize, setPrize] = useState<PrizeTier | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [cleared, setCleared] = useState(0);
+  const [clearedRatio, setClearedRatio] = useState(0);
   const [revealed, setRevealed] = useState(false);
+  const lastPosRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     setPrize(drawPrize());
@@ -82,12 +83,10 @@ export const ScratchCard: React.FC = () => {
     ctx.lineTo(to.x, to.y);
     ctx.stroke();
 
-    const ratio = clearedRatio(ctx);
-    setCleared(ratio);
+    const ratio = calcClearedRatio(ctx);
+    setClearedRatio(ratio);
     if (ratio >= REVEAL_THRESHOLD) setRevealed(true);
   };
-
-  const lastPosRef = useRef<{ x: number; y: number } | null>(null);
 
   const handleStart = (e: CanvasEvent) => {
     e.preventDefault();
@@ -116,9 +115,9 @@ export const ScratchCard: React.FC = () => {
     lastPosRef.current = null;
   };
 
-  const displayName = revealed && prize ? prize.name : "????";
-  const displayDesc = revealed && prize ? prize.description : "카드를 긁어 결과를 확인하세요.";
-  const displayColor = revealed && prize ? prize.color : "text-slate-200";
+  const displayName = prize?.name ?? "????";
+  const displayDesc = prize?.description ?? "카드를 긁어 결과를 확인하세요.";
+  const displayColor = prize?.color ?? "text-slate-200";
 
   return (
     <div className="flex flex-col items-center gap-4">
@@ -149,7 +148,7 @@ export const ScratchCard: React.FC = () => {
       </div>
 
       <div className="text-xs text-slate-400">
-        긁힌 면적: {(cleared * 100).toFixed(0)}%
+        긁힌 면적: {(clearedRatio * 100).toFixed(0)}%
         {revealed
           ? " · 결과가 모두 공개되었습니다!"
           : " · 60% 이상 긁으면 자동으로 공개됩니다"}
