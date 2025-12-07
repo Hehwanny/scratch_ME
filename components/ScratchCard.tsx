@@ -1,166 +1,168 @@
+// components/ScratchCard.tsx
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
 import { drawPrize, PrizeTier } from "@/lib/prizes";
 
-const CARD_WIDTH = 480;
-const CARD_HEIGHT = 280;
-const BRUSH_RADIUS = 28;
-const REVEAL_THRESHOLD = 0.6;
+const CARD_WIDTH = 320;
+const CARD_HEIGHT = 180;
+const BRUSH_RADIUS = 24;
+const REVEAL_THRESHOLD = 0.6; // 60%
 
-type CanvasEvent =
-  | React.MouseEvent<HTMLCanvasElement>
-  | React.TouchEvent<HTMLCanvasElement>;
-
-function getPos(e: CanvasEvent, canvas: HTMLCanvasElement) {
+function getCanvasPos(
+  e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>,
+  canvas: HTMLCanvasElement
+) {
   const rect = canvas.getBoundingClientRect();
+
   if ("touches" in e) {
-    const t = e.touches[0];
-    return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+    const touch = e.touches[0];
+    return {
+      x: touch.clientX - rect.left,
+      y: touch.clientY - rect.top,
+    };
+  } else {
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
   }
-  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 
-function calcClearedRatio(ctx: CanvasRenderingContext2D) {
+function calculateClearedRatio(ctx: CanvasRenderingContext2D) {
   const { width, height } = ctx.canvas;
-  const data = ctx.getImageData(0, 0, width, height).data;
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+
   let cleared = 0;
+  // 알파값만 간단히 확인 (4바이트마다 alpha)
   for (let i = 3; i < data.length; i += 4) {
-    if (data[i] === 0) cleared++;
+    if (data[i] === 0) {
+      cleared++;
+    }
   }
-  return cleared / (width * height);
+
+  const totalPixels = width * height;
+  return cleared / totalPixels;
 }
 
-export function ScratchCard() {
+export const ScratchCard: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [prize, setPrize] = useState<PrizeTier | null>(null);
-  const [revealed, setRevealed] = useState(false);
+  const [isDrawing, setIsDrawing] = useState(false);
   const [clearedRatio, setClearedRatio] = useState(0);
-  const drawingRef = useRef(false);
-  const lastPosRef = useRef<{ x: number; y: number } | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  const [prize] = useState<PrizeTier>(() => drawPrize());
 
   useEffect(() => {
-    setPrize(drawPrize());
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    canvas.width = CARD_WIDTH;
+    canvas.height = CARD_HEIGHT;
+
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = CARD_WIDTH * dpr;
-    canvas.height = CARD_HEIGHT * dpr;
-    canvas.style.width = `${CARD_WIDTH}px`;
-    canvas.style.height = `${CARD_HEIGHT}px`;
-    ctx.scale(dpr, dpr);
-
+    // 스크래치 코팅 초기화
     ctx.globalCompositeOperation = "source-over";
     const gradient = ctx.createLinearGradient(0, 0, CARD_WIDTH, CARD_HEIGHT);
     gradient.addColorStop(0, "#9ca3af");
-    gradient.addColorStop(1, "#6b7280");
+    gradient.addColorStop(1, "#4b5563");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
+
+    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.font = "bold 20px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("긁어서 확인!", CARD_WIDTH / 2, CARD_HEIGHT / 2);
   }, []);
 
-  useEffect(() => {
-    if (!revealed) return;
+  const startDrawing = (
+    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
+  ) => {
+    e.preventDefault();
+    if (revealed) return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    setIsDrawing(true);
+    scratch(e, canvas);
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const scratch = (
+    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>,
+    canvas: HTMLCanvasElement
+  ) => {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  }, [revealed]);
 
-  const scratch = (from: { x: number; y: number }, to: { x: number; y: number }) => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx || revealed) return;
+    const { x, y } = getCanvasPos(e, canvas);
 
     ctx.globalCompositeOperation = "destination-out";
-    ctx.lineWidth = BRUSH_RADIUS * 2;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-
     ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
-    ctx.stroke();
+    ctx.arc(x, y, BRUSH_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
 
-    const ratio = calcClearedRatio(ctx);
+    // 긁힌 비율 계산
+    const ratio = calculateClearedRatio(ctx);
     setClearedRatio(ratio);
-    if (ratio >= REVEAL_THRESHOLD) {
+
+    if (ratio >= REVEAL_THRESHOLD && !revealed) {
       setRevealed(true);
     }
   };
 
-  const handleStart = (e: CanvasEvent) => {
+  const handleMove = (
+    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
+  ) => {
     e.preventDefault();
+    if (!isDrawing || revealed) return;
+
     const canvas = canvasRef.current;
-    if (!canvas || revealed) return;
-    const pos = getPos(e, canvas);
-    drawingRef.current = true;
-    lastPosRef.current = pos;
-    scratch(pos, pos);
-  };
+    if (!canvas) return;
 
-  const handleMove = (e: CanvasEvent) => {
-    e.preventDefault();
-    const canvas = canvasRef.current;
-    if (!canvas || !drawingRef.current || revealed) return;
-    const current = getPos(e, canvas);
-    const last = lastPosRef.current ?? current;
-    scratch(last, current);
-    lastPosRef.current = current;
+    scratch(e, canvas);
   };
-
-  const handleEnd = () => {
-    drawingRef.current = false;
-    lastPosRef.current = null;
-  };
-
-  const prizeName = prize?.name ?? "결과 대기 중";
-  const prizeDesc = prize?.description ?? "긁어서 결과를 확인하세요.";
-  const prizeColor = prize?.color ?? "text-slate-700";
 
   return (
-    <div className="flex flex-col items-center gap-3">
-      <div className="relative rounded-2xl bg-white shadow-md border border-slate-200 p-4">
-        <div className="w-[480px]">
-          <div className="relative flex flex-col items-center gap-3 rounded-xl bg-white p-4">
-            <div className="text-center space-y-1">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                Scratch &amp; Reveal
-              </p>
-              <p className="text-2xl font-semibold text-slate-800">scratch me</p>
-            </div>
-
-            <div className="relative w-full overflow-hidden rounded-lg bg-slate-50 border border-slate-200 p-4">
-              <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
-                <p className={`text-2xl font-semibold ${prizeColor}`}>{prizeName}</p>
-                <p className="text-sm text-slate-600">{prizeDesc}</p>
-              </div>
-
-              <canvas
-                ref={canvasRef}
-                className={`relative z-10 h-[180px] w-full rounded-[4px] border border-slate-300 shadow-sm touch-none ${
-                  revealed ? "opacity-0 transition-opacity duration-300" : "opacity-100"
-                }`}
-                onMouseDown={handleStart}
-                onMouseMove={handleMove}
-                onMouseUp={handleEnd}
-                onMouseLeave={handleEnd}
-                onTouchStart={handleStart}
-                onTouchMove={handleMove}
-                onTouchEnd={handleEnd}
-                onTouchCancel={handleEnd}
-              />
-            </div>
-          </div>
+    <div className="flex flex-col items-center gap-4">
+      <div className="relative">
+        {/* 결과 카드 (밑 레이어) */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl bg-slate-900 border border-slate-700 px-6 py-4">
+          <p className="text-sm text-slate-400 mb-1">오늘의 복권 결과</p>
+          <p className={`text-4xl font-bold ${prize.color}`}>{prize.name}</p>
+          <p className="mt-3 text-sm text-slate-300 text-center max-w-xs">
+            {prize.description}
+          </p>
         </div>
+
+        {/* 스크래치 캔버스 (윗 레이어) */}
+        <canvas
+          ref={canvasRef}
+          className={`block rounded-xl shadow-xl border border-slate-500 touch-none ${
+            revealed ? "opacity-0 transition-opacity duration-500" : ""
+          }`}
+          onMouseDown={startDrawing}
+          onMouseUp={stopDrawing}
+          onMouseLeave={stopDrawing}
+          onMouseMove={handleMove}
+          onTouchStart={startDrawing}
+          onTouchEnd={stopDrawing}
+          onTouchCancel={stopDrawing}
+          onTouchMove={handleMove}
+        />
       </div>
 
-      <div className="text-xs text-slate-600">
-        {Math.round(clearedRatio * 100)}% 공개됨 · 60% 이상 긁으면 자동 공개
+      <div className="text-xs text-slate-400">
+        긁힌 정도: {(clearedRatio * 100).toFixed(0)}%
+        {revealed ? "  · 결과가 모두 공개됐어!" : "  · 60% 이상 긁으면 자동 공개"}
       </div>
     </div>
   );
-}
+};
