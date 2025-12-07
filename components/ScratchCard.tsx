@@ -1,4 +1,3 @@
-// components/ScratchCard.tsx
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
@@ -9,10 +8,11 @@ const CARD_HEIGHT = 180;
 const BRUSH_RADIUS = 24;
 const REVEAL_THRESHOLD = 0.6; // 60%
 
-function getCanvasPos(
-  e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>,
-  canvas: HTMLCanvasElement
-) {
+type CanvasEvent =
+  | React.MouseEvent<HTMLCanvasElement>
+  | React.TouchEvent<HTMLCanvasElement>;
+
+function getCanvasPos(e: CanvasEvent, canvas: HTMLCanvasElement) {
   const rect = canvas.getBoundingClientRect();
 
   if ("touches" in e) {
@@ -21,12 +21,12 @@ function getCanvasPos(
       x: touch.clientX - rect.left,
       y: touch.clientY - rect.top,
     };
-  } else {
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
   }
+
+  return {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top,
+  };
 }
 
 function calculateClearedRatio(ctx: CanvasRenderingContext2D) {
@@ -35,7 +35,6 @@ function calculateClearedRatio(ctx: CanvasRenderingContext2D) {
   const data = imageData.data;
 
   let cleared = 0;
-  // 알파값만 간단히 확인 (4바이트마다 alpha)
   for (let i = 3; i < data.length; i += 4) {
     if (data[i] === 0) {
       cleared++;
@@ -51,9 +50,11 @@ export const ScratchCard: React.FC = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [clearedRatio, setClearedRatio] = useState(0);
   const [revealed, setRevealed] = useState(false);
-  const [prize] = useState<PrizeTier>(() => drawPrize());
+  const [prize, setPrize] = useState<PrizeTier | null>(null);
 
   useEffect(() => {
+    setPrize(drawPrize());
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -63,7 +64,6 @@ export const ScratchCard: React.FC = () => {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // 스크래치 코팅 초기화
     ctx.globalCompositeOperation = "source-over";
     const gradient = ctx.createLinearGradient(0, 0, CARD_WIDTH, CARD_HEIGHT);
     gradient.addColorStop(0, "#9ca3af");
@@ -78,9 +78,7 @@ export const ScratchCard: React.FC = () => {
     ctx.fillText("긁어서 확인!", CARD_WIDTH / 2, CARD_HEIGHT / 2);
   }, []);
 
-  const startDrawing = (
-    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
-  ) => {
+  const startDrawing = (e: CanvasEvent) => {
     e.preventDefault();
     if (revealed) return;
 
@@ -95,10 +93,7 @@ export const ScratchCard: React.FC = () => {
     setIsDrawing(false);
   };
 
-  const scratch = (
-    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>,
-    canvas: HTMLCanvasElement
-  ) => {
+  const scratch = (e: CanvasEvent, canvas: HTMLCanvasElement) => {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
@@ -109,7 +104,6 @@ export const ScratchCard: React.FC = () => {
     ctx.arc(x, y, BRUSH_RADIUS, 0, Math.PI * 2);
     ctx.fill();
 
-    // 긁힌 비율 계산
     const ratio = calculateClearedRatio(ctx);
     setClearedRatio(ratio);
 
@@ -118,9 +112,7 @@ export const ScratchCard: React.FC = () => {
     }
   };
 
-  const handleMove = (
-    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
-  ) => {
+  const handleMove = (e: CanvasEvent) => {
     e.preventDefault();
     if (!isDrawing || revealed) return;
 
@@ -133,16 +125,16 @@ export const ScratchCard: React.FC = () => {
   return (
     <div className="flex flex-col items-center gap-4">
       <div className="relative">
-        {/* 결과 카드 (밑 레이어) */}
         <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl bg-slate-900 border border-slate-700 px-6 py-4">
-          <p className="text-sm text-slate-400 mb-1">오늘의 복권 결과</p>
-          <p className={`text-4xl font-bold ${prize.color}`}>{prize.name}</p>
+          <p className="text-sm text-slate-400 mb-1">오늘의 복권</p>
+          <p className={`text-4xl font-bold ${prize?.color ?? "text-slate-200"}`}>
+            {prize?.name ?? "긁어서 확인"}
+          </p>
           <p className="mt-3 text-sm text-slate-300 text-center max-w-xs">
-            {prize.description}
+            {prize?.description ?? "카드를 긁어 결과를 확인하세요."}
           </p>
         </div>
 
-        {/* 스크래치 캔버스 (윗 레이어) */}
         <canvas
           ref={canvasRef}
           className={`block rounded-xl shadow-xl border border-slate-500 touch-none ${
@@ -160,9 +152,11 @@ export const ScratchCard: React.FC = () => {
       </div>
 
       <div className="text-xs text-slate-400">
-        긁힌 정도: {(clearedRatio * 100).toFixed(0)}%
-        {revealed ? "  · 결과가 모두 공개됐어!" : "  · 60% 이상 긁으면 자동 공개"}
+        긁힌 면적: {(clearedRatio * 100).toFixed(0)}%
+        {revealed
+          ? " · 결과가 모두 공개되었습니다!"
+          : " · 60% 이상 긁으면 자동으로 공개됩니다"}
       </div>
     </div>
   );
-};
+}
