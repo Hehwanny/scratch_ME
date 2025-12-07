@@ -122,23 +122,26 @@ export const ScratchCard: React.FC = () => {
     scratch(e, canvas);
   };
 
+  const displayName = revealed && prize ? prize.name : "????";
+  const displayDesc = revealed && prize ? prize.description : "카드를 긁어 결과를 확인하세요.";
+  const displayColor = revealed && prize ? prize.color : "text-slate-200";
+
   return (
     <div className="flex flex-col items-center gap-4">
-      <div className="relative">
-        <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl bg-slate-900 border border-slate-700 px-6 py-4">
+      <div
+        className="relative rounded-xl shadow-xl border border-slate-500 overflow-hidden"
+        style={{ width: CARD_WIDTH, height: CARD_HEIGHT }}
+      >
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 px-6 py-4 text-center">
           <p className="text-sm text-slate-400 mb-1">오늘의 복권</p>
-          <p className={`text-4xl font-bold ${prize?.color ?? "text-slate-200"}`}>
-            {prize?.name ?? "긁어서 확인"}
-          </p>
-          <p className="mt-3 text-sm text-slate-300 text-center max-w-xs">
-            {prize?.description ?? "카드를 긁어 결과를 확인하세요."}
-          </p>
+          <p className={`text-4xl font-bold ${displayColor}`}>{displayName}</p>
+          <p className="mt-3 text-sm text-slate-300 text-center max-w-xs">{displayDesc}</p>
         </div>
 
         <canvas
           ref={canvasRef}
-          className={`block rounded-xl shadow-xl border border-slate-500 touch-none ${
-            revealed ? "opacity-0 transition-opacity duration-500" : ""
+          className={`absolute inset-0 z-10 touch-none ${
+            revealed ? "opacity-0 transition-opacity duration-500" : "opacity-100"
           }`}
           onMouseDown={startDrawing}
           onMouseUp={stopDrawing}
