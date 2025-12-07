@@ -12,57 +12,46 @@ type CanvasEvent =
   | React.MouseEvent<HTMLCanvasElement>
   | React.TouchEvent<HTMLCanvasElement>;
 
-function getCanvasPos(e: CanvasEvent, canvas: HTMLCanvasElement) {
+function getPos(e: CanvasEvent, canvas: HTMLCanvasElement) {
   const rect = canvas.getBoundingClientRect();
-
   if ("touches" in e) {
-    const touch = e.touches[0];
-    return {
-      x: touch.clientX - rect.left,
-      y: touch.clientY - rect.top,
-    };
+    const t = e.touches[0];
+    return { x: t.clientX - rect.left, y: t.clientY - rect.top };
   }
-
-  return {
-    x: e.clientX - rect.left,
-    y: e.clientY - rect.top,
-  };
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 
-function calculateClearedRatio(ctx: CanvasRenderingContext2D) {
+function clearedRatio(ctx: CanvasRenderingContext2D) {
   const { width, height } = ctx.canvas;
-  const imageData = ctx.getImageData(0, 0, width, height);
-  const data = imageData.data;
-
+  const data = ctx.getImageData(0, 0, width, height).data;
   let cleared = 0;
   for (let i = 3; i < data.length; i += 4) {
-    if (data[i] === 0) {
-      cleared++;
-    }
+    if (data[i] === 0) cleared++;
   }
-
-  const totalPixels = width * height;
-  return cleared / totalPixels;
+  return cleared / (width * height);
 }
 
 export const ScratchCard: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [clearedRatio, setClearedRatio] = useState(0);
-  const [revealed, setRevealed] = useState(false);
   const [prize, setPrize] = useState<PrizeTier | null>(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [cleared, setCleared] = useState(0);
+  const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
     setPrize(drawPrize());
 
     const canvas = canvasRef.current;
     if (!canvas) return;
-
-    canvas.width = CARD_WIDTH;
-    canvas.height = CARD_HEIGHT;
-
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = CARD_WIDTH * dpr;
+    canvas.height = CARD_HEIGHT * dpr;
+    canvas.style.width = `${CARD_WIDTH}px`;
+    canvas.style.height = `${CARD_HEIGHT}px`;
+    ctx.scale(dpr, dpr);
 
     ctx.globalCompositeOperation = "source-over";
     const gradient = ctx.createLinearGradient(0, 0, CARD_WIDTH, CARD_HEIGHT);
@@ -72,54 +61,59 @@ export const ScratchCard: React.FC = () => {
     ctx.fillRect(0, 0, CARD_WIDTH, CARD_HEIGHT);
 
     ctx.fillStyle = "rgba(255,255,255,0.3)";
-    ctx.font = "bold 20px system-ui";
+    ctx.font = "bold 18px system-ui";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("긁어서 확인!", CARD_WIDTH / 2, CARD_HEIGHT / 2);
   }, []);
 
-  const startDrawing = (e: CanvasEvent) => {
-    e.preventDefault();
-    if (revealed) return;
-
+  const scratchLine = (from: { x: number; y: number }, to: { x: number; y: number }) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    setIsDrawing(true);
-    scratch(e, canvas);
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const scratch = (e: CanvasEvent, canvas: HTMLCanvasElement) => {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const { x, y } = getCanvasPos(e, canvas);
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx || revealed) return;
 
     ctx.globalCompositeOperation = "destination-out";
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = BRUSH_RADIUS * 2;
+
     ctx.beginPath();
-    ctx.arc(x, y, BRUSH_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
 
-    const ratio = calculateClearedRatio(ctx);
-    setClearedRatio(ratio);
+    const ratio = clearedRatio(ctx);
+    setCleared(ratio);
+    if (ratio >= REVEAL_THRESHOLD) setRevealed(true);
+  };
 
-    if (ratio >= REVEAL_THRESHOLD && !revealed) {
-      setRevealed(true);
-    }
+  const lastPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleStart = (e: CanvasEvent) => {
+    e.preventDefault();
+    if (revealed) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const pos = getPos(e, canvas);
+    lastPosRef.current = pos;
+    setIsDrawing(true);
+    scratchLine(pos, pos);
   };
 
   const handleMove = (e: CanvasEvent) => {
     e.preventDefault();
     if (!isDrawing || revealed) return;
-
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const current = getPos(e, canvas);
+    const last = lastPosRef.current ?? current;
+    scratchLine(last, current);
+    lastPosRef.current = current;
+  };
 
-    scratch(e, canvas);
+  const handleEnd = () => {
+    setIsDrawing(false);
+    lastPosRef.current = null;
   };
 
   const displayName = revealed && prize ? prize.name : "????";
@@ -140,26 +134,26 @@ export const ScratchCard: React.FC = () => {
 
         <canvas
           ref={canvasRef}
-          className={`absolute inset-0 z-10 touch-none ${
+          className={`absolute inset-0 z-10 ${
             revealed ? "opacity-0 transition-opacity duration-500" : "opacity-100"
           }`}
-          onMouseDown={startDrawing}
-          onMouseUp={stopDrawing}
-          onMouseLeave={stopDrawing}
+          onMouseDown={handleStart}
           onMouseMove={handleMove}
-          onTouchStart={startDrawing}
-          onTouchEnd={stopDrawing}
-          onTouchCancel={stopDrawing}
+          onMouseUp={handleEnd}
+          onMouseLeave={handleEnd}
+          onTouchStart={handleStart}
           onTouchMove={handleMove}
+          onTouchEnd={handleEnd}
+          onTouchCancel={handleEnd}
         />
       </div>
 
       <div className="text-xs text-slate-400">
-        긁힌 면적: {(clearedRatio * 100).toFixed(0)}%
+        긁힌 면적: {(cleared * 100).toFixed(0)}%
         {revealed
           ? " · 결과가 모두 공개되었습니다!"
           : " · 60% 이상 긁으면 자동으로 공개됩니다"}
       </div>
     </div>
   );
-}
+};
